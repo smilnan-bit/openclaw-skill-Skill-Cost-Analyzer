@@ -1,42 +1,251 @@
-在运行任何 skill 之前，先帮你算清楚要花多少 token，超预算时还会告诉你怎么省钱。
+# Skill Cost Analyzer for OpenClaw
 
-你是否遇到过这些情况？
+An OpenClaw skill that estimates token consumption of any skill before running it. **This skill only performs estimation and never executes the target skill.**
 
-运行一个陌生的 skill，不知道会消耗多少 token，运行完才发现超支严重？
-某个 skill 特别费 token，但不知道钱花在哪里，无从优化？
-团队协作时，不同成员写的 skill 成本差异巨大，缺乏统一的成本管理手段？
-【它能帮你做什么】
-Token 预算管家就像给 skill 做"体检"——在真正运行之前：
+Adapts to each user's runtime environment: detects your LLM model, available tools, and platform for personalized estimation.
 
-精准预估：告诉你这个 skill 大概要消耗多少 token（准确度 ±30% 到 ±50%）
-智能判定：根据你的预算上限，判断能不能跑（PASS / BLOCKED / WARNING）
-找出大头：超预算时，自动分析 Top 3 最费 token 的环节，用大白话解释为什么贵
-给出方案：提供 2-4 条具体的改写建议，告诉你怎么优化能省多少 token
-【给你带来的价值】
-✅ 成本可控 — 先估后跑，避免意外超支，团队 token 预算更好管理
-✅ 优化有据 — 不再瞎猜哪里费钱，热点排行一目了然，改写方向明确
-✅ 学习工具 — 看别人的 skill 为什么省 token，提升自己的 skill 编写水平
-✅ 协作友好 — 分享 skill 前先评估，让接手的同事心里有数
-✅ 时间节约 — 不用跑一遍才知道超支，改了再跑再超支，一次估准少走弯路
+## Installation
 
-【典型使用场景】
+Copy the `Skill-Cost-Analyzer/` folder to your OpenClaw skills directory:
 
-运行陌生 skill 前："这个 coding-agent 要花多少钱？我的预算够吗？"
-优化现有 skill："我的 skill 总是超预算，到底哪里出问题了？"
-团队代码审查："这个 PR 里的 skill 写得怎么样，成本可控吗？"
-skill 开发阶段："写完 skill 先估一下，看看有没有明显的成本漏洞再提交"
-【输入】
-<skill名称>：任何你想评估的 skill（自己写的、同事的、内置的都行）
---limit：可选，你的 token 预算上限（默认 50,000）
+```bash
+# Workspace-level (this project only)
+cp -r Skill-Cost-Analyzer/ <your-project>/skills/
 
-【输出】
-预算内（PASS）时 — 简洁报告：
+# Managed-level (all projects)
+cp -r Skill-Cost-Analyzer/ ~/.openclaw/skills/
+```
 
-基本信息（skill 类型、你的模型、平台）
-预估消耗（总量 + 各环节明细）
-判定结果："✅ 在预算内，可以放心跑"
-超预算（BLOCKED）时 — 完整分析：
-上面的基本信息 +
+Or paste the GitHub repository link directly into an OpenClaw chat for automatic setup.
 
-消耗热点排行榜："钱都花在哪了"，Top 3 大头，白话解释原因
-改写建议：具体告诉你改哪里、为什么能省、预估省多少
+## Usage
+
+### Basic usage
+
+```
+/skill-cost-analyzer <skill_name>
+```
+
+Analyzes the target skill with the default 50,000 token limit.
+
+### With custom limit
+
+```
+/skill-cost-analyzer coding-agent --limit 100000
+```
+
+### Show detailed analysis
+
+```
+/skill-cost-analyzer browser --detail
+```
+
+## Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--limit <number>` | 50000 | Custom token consumption threshold |
+| `--detail` | false | Show detailed analysis breakdown including model detection and tool cross-referencing |
+
+## How It Works
+
+### Personalized Runtime Detection (Step 0)
+
+Before any analysis, the skill reads your OpenClaw session context to detect:
+
+- **Your LLM model** -- selects model-specific tokenization rates
+- **Your available tools** -- cross-checks against the target skill's tool requirements
+- **Your registered skills** -- enables zero-cost skill lookup
+- **Your platform** -- OS and runtime information
+
+### Model-Aware Tokenization
+
+Different models tokenize text differently. The skill adapts:
+
+| Model Family | English chars/tok | CJK chars/tok | Context Window |
+|-------------|------------------|--------------|---------------|
+| Claude | 3.5 | 1.5 | 200k |
+| GPT-4o / o-series | 4.0 | 1.2 | 128k |
+| DeepSeek | 3.8 | 1.8 | 128k |
+| Gemini | 4.0 | 1.5 | 1M+ |
+| Qwen | 3.8 | 1.2 | 128k |
+
+Unknown models use conservative defaults.
+
+### Universal Skill Analysis
+
+Works with any skill source:
+
+- **File-based skills** (SKILL.md or legacy .md): reads full prompt, High confidence (+-30%)
+- **Known built-in skills** (14 profiled): uses behavior profiles, Medium confidence (+-50%)
+- **Unknown skills**: description-based analysis, Low confidence (+-70%)
+
+### 5-Dimension Analysis
+
+1. **Prompt Tokens** -- model-aware character-to-token conversion
+2. **Tool Call Density** -- 25+ OpenClaw tools covered (file, exec, browser, web, agent/session, messaging, device, memory, image)
+3. **Iteration Depth** -- loop and multi-step detection
+4. **Sub-Agent Usage** -- sessions_spawn / subagents cost multiplier
+5. **Output Scale** -- expected output size classification
+
+### Token Hot Spots & Optimization Suggestions (only when over budget)
+
+When estimated tokens **exceed your limit** (BLOCKED or WARNING), the report additionally includes:
+- **Token Hot Spots**: the top 3 most token-hungry parts of the skill, with plain-language explanations of why they're expensive
+- **Optimization Suggestions**: 2-4 specific, actionable tips you could use to rewrite the skill, each with estimated savings
+
+These are **suggestions for your reference only** -- you decide whether to act on them. When the estimate is within budget (PASS), these sections are omitted to keep the report concise.
+
+### Tool Availability Cross-Check
+
+If the target skill references tools not available in your environment, the report warns you -- so you know the skill may fail before you run it.
+
+## Complexity Levels
+
+| Level | Token Range | Typical Characteristics |
+|-------|-------------|------------------------|
+| Lightweight | 1k - 5k | Single read/query, no agent calls |
+| Medium | 5k - 30k | Multi-file read/write, few tool calls |
+| Heavy | 30k - 100k | Agent/sub-process, multi-round iteration |
+| Ultra-heavy | 100k+ | Multi-agent parallel, large-scale codegen |
+
+## Example Output
+
+### When within budget (PASS) -- clean and concise:
+
+```
++====================================================+
+|           Token Efficiency Report                  |
++====================================================+
+| Target Skill:     commit                           |
+| Skill Type:       Built-in                         |
+| Skill Location:   System                           |
+| Confidence:       Medium                           |
++----------------------------------------------------+
+| Model:            gpt-4o                           |
+| Tokenizer:        GPT Profile                      |
+| Platform:         linux                            |
++----------------------------------------------------+
+| Prompt Tokens:          ~800                       |
+| Est. Tool Calls:        4-6 calls                  |
+| Est. Tool Tokens:       ~5,500                     |
+| Est. Output Tokens:     ~500                       |
+| Sys Prompt Overhead:    ~1,200                     |
+| Sub-Agent:              No                         |
+| Iteration Multiplier:   x1                         |
+| Sub-Agent Multiplier:   x1                         |
++----------------------------------------------------+
+| Complexity:       Medium                           |
+| Est. Total:       ~8,000 tokens                    |
+| Range:            4,000 - 12,000 tokens            |
+| User Limit:       50,000 tokens                    |
+| Context Window:   128,000 tokens                   |
+| Est. vs Window:   6%                               |
+| Status:           PASS                             |
++====================================================+
+
+You can safely run /commit -- estimated cost is
+within your 50,000 token limit.
+```
+
+### When over budget (BLOCKED) -- includes hot spots & suggestions:
+
+```
++====================================================+
+|           Token Efficiency Report                  |
++====================================================+
+| Target Skill:     coding-agent                     |
+| Skill Type:       Built-in                         |
+| Skill Location:   System                           |
+| Confidence:       Medium                           |
++----------------------------------------------------+
+| Model:            claude-sonnet-4-5-20250929       |
+| Tokenizer:        Claude Profile                   |
+| Platform:         darwin (macOS)                   |
++----------------------------------------------------+
+| Prompt Tokens:          ~2,500                     |
+| Est. Tool Calls:        15-25 calls                |
+| Est. Tool Tokens:       ~35,000                    |
+| Est. Output Tokens:     ~10,000                    |
+| Sys Prompt Overhead:    ~1,500                     |
+| Sub-Agent:              Yes (1-2)                  |
+| Iteration Multiplier:   x3                         |
+| Sub-Agent Multiplier:   x4                         |
++----------------------------------------------------+
+| Complexity:       Ultra-heavy                      |
+| Est. Total:       ~588,000 tokens                  |
+| Range:            294,000 - 882,000 tokens         |
+| User Limit:       100,000 tokens                   |
+| Context Window:   200,000 tokens                   |
+| Est. vs Window:   294%                             |
+| Status:           BLOCKED (8.8x over limit)        |
++----------------------------------------------------+
+| Tool Warnings:                                     |
+|   (none - all referenced tools available)          |
++----------------------------------------------------+
+| Token Hot Spots (where your tokens go)             |
++----------------------------------------------------+
+| #1  Sub-agent spawning (sessions_spawn x2)         |
+|     ~220,000 tokens (37% of total)                 |
+|     Why: Each sub-agent starts a whole new          |
+|     conversation, duplicating all the context.      |
+|     Two sub-agents = double the duplication.        |
++----------------------------------------------------+
+| #2  File reading inside a loop (read x15)          |
+|     ~150,000 tokens (26% of total)                 |
+|     Why: Every file read dumps the full file        |
+|     content into the conversation. Reading 15       |
+|     files in a loop adds up fast.                   |
++----------------------------------------------------+
+| #3  Iteration multiplier (x3 loop)                 |
+|     ~120,000 tokens (20% of total)                 |
+|     Why: The skill repeats its core logic 3         |
+|     times. Everything inside the loop costs 3x.     |
++====================================================+
+| Optimization Suggestions (for your reference)      |
++----------------------------------------------------+
+| 1. Replace sub-agents with direct tool calls       |
+|    What to change: If the sub-task is just          |
+|    "read files and edit code", do it directly       |
+|    instead of spawning a new agent for it.          |
+|    Why it helps: Avoids duplicating the entire      |
+|    conversation context for each sub-agent.         |
+|    Est. savings: ~150,000 tokens (25%)              |
++----------------------------------------------------+
+| 2. Read files once before the loop                 |
+|    What to change: Move all file reads outside      |
+|    the loop. Read once, store results, then         |
+|    process them in the loop.                        |
+|    Why it helps: You only pay the token cost        |
+|    of reading each file once instead of every       |
+|    iteration.                                       |
+|    Est. savings: ~100,000 tokens (17%)              |
++----------------------------------------------------+
+| 3. Add early-exit to reduce loop iterations        |
+|    What to change: Add a condition to stop the      |
+|    loop early when the task is done, instead        |
+|    of always running all 3 iterations.              |
+|    Why it helps: If the task finishes in 1          |
+|    iteration, you save 2x worth of tokens.          |
+|    Est. savings: ~80,000 tokens (14%)               |
++----------------------------------------------------+
+| Note: These are suggestions only. You decide       |
+| whether to modify your skill. After changes,       |
+| run /skill-cost-analyzer again to verify savings.  |
++====================================================+
+```
+
+> Note: This skill only reports estimates. It never executes the target skill. Hot spots and suggestions only appear when the estimate exceeds your limit -- you decide whether to act on them.
+
+## Limitations
+
+- Estimates are approximate -- accuracy varies by skill type (see confidence levels)
+- Built-in skills are estimated from behavior profiles, not full prompt analysis
+- Model detection depends on OpenClaw's Runtime section being present
+- Tool output sizes depend on actual content; estimates use historical averages
+- Sub-agent and browser behaviors have the highest variance
+- Browser screenshot/vision tools may consume vision tokens not captured in text-token estimates
+
+## License
+
+MIT
